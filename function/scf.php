@@ -112,7 +112,9 @@ function setConfig($arr, $disktag = '')
     }
 //    echo '正式设置：'.json_encode($tmp,JSON_PRETTY_PRINT).'
 //';
-    return updateEnvironment($tmp, $_SERVER['function_name'], $_SERVER['Region'], $_SERVER['namespace'], getConfig('SecretId'), getConfig('SecretKey'));
+    $response = updateEnvironment($tmp, $_SERVER['function_name'], $_SERVER['Region'], $_SERVER['namespace'], getConfig('SecretId'), getConfig('SecretKey'));
+    WaitSCFStat();
+    return $response;
 }
 
 function WaitSCFStat()
@@ -125,10 +127,19 @@ function WaitSCFStat()
 function install()
 {
     global $constStr;
+    if ($_GET['install2']) {
+        $tmp['admin'] = $_POST['admin'];
+        setConfig($tmp);
+        if (needUpdate()) {
+            updateProgram($_SERVER['function_name'], $_SERVER['Region'], $_SERVER['namespace'], $SecretId, $SecretKey);
+            return message('update to github version, reinstall.<script>document.cookie=\'language=; path=/\';</script><meta http-equiv="refresh" content="3;URL=' . $url . '">', 'Program updating', 201);
+        }
+        return output('Jump<script>document.cookie=\'language=; path=/\';</script><meta http-equiv="refresh" content="3;URL=' . path_format($_SERVER['base_path'] . '/') . '">', 302);
+    }
     if ($_GET['install1']) {
-        if ($_POST['admin']!='') {
-            $tmp['admin'] = $_POST['admin'];
+        //if ($_POST['admin']!='') {
             $tmp['language'] = $_POST['language'];
+            $tmp['Region'] = $_POST['Region'];
             $SecretId = getConfig('SecretId');
             if ($SecretId=='') {
                 $SecretId = $_POST['SecretId'];
@@ -139,24 +150,31 @@ function install()
                 $SecretKey = $_POST['SecretKey'];
                 $tmp['SecretKey'] = $SecretKey;
             }
-            $response = json_decode(SetbaseConfig($tmp, $_SERVER['function_name'], $_SERVER['Region'], $_SERVER['namespace'], $SecretId, $SecretKey), true)['Response'];
+            $response = json_decode(SetbaseConfig($tmp, $_SERVER['function_name'], $_POST['Region'], $_SERVER['namespace'], $SecretId, $SecretKey), true)['Response'];
             if (api_error($response)) {
                 $html = api_error_msg($response);
-                $html .= '<br>
-<button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>';
                 $title = 'Error';
+                return message($html, $title, 201);
             } else {
-                $trynum = 0;
-    while( json_decode(getfunctioninfo($_SERVER['function_name'], $_SERVER['Region'], $_SERVER['namespace'], $SecretId, $SecretKey),true)['Response']['Status']!='Active' ) echo '
-'.++$trynum;
-                if (needUpdate()) {
-                    updateProgram($_SERVER['function_name'], $_SERVER['Region'], $_SERVER['namespace'], $SecretId, $SecretKey);
-                    return message('update to github version, reinstall.<meta http-equiv="refresh" content="3;URL=' . $url . '">', 'Program updating', 201);
-                }
-                return output('Jump<meta http-equiv="refresh" content="3;URL=' . path_format($_SERVER['base_path'] . '/') . '">', 302);
+                $html .= '
+    <form action="?install2" method="post" onsubmit="return notnull(this);">
+        <label>'.getconstStr('SetAdminPassword').':<input name="admin" type="password" placeholder="' . getconstStr('EnvironmentsDescription')['admin'] . '" size="' . strlen(getconstStr('EnvironmentsDescription')['admin']) . '"></label><br>
+        <input type="submit" value="'.getconstStr('Submit').'">
+    </form>
+    <script>
+        function notnull(t)
+        {
+            if (t.admin.value==\'\') {
+                alert(\''.getconstStr('SetAdminPassword').'\');
+                return false;
             }
-            return message($html, $title, 201);
+            return true;
         }
+    </script>';
+                $title = getconstStr('SetAdminPassword');
+                return message($html, $title, 201);
+            }
+        //}
     }
     if ($_GET['install0']) {
         $html .= '
@@ -171,8 +189,21 @@ language:<br>';
         <label>SecretId:<input name="SecretId" type="text" placeholder="" size=""></label><br>
         <label>SecretKey:<input name="SecretKey" type="text" placeholder="" size=""></label><br>';
         $html .= '
-        <label>Set admin password:<input name="admin" type="password" placeholder="' . getconstStr('EnvironmentsDescription')['admin'] . '" size="' . strlen(getconstStr('EnvironmentsDescription')['admin']) . '"></label><br>';
-        $html .= '
+        <select class="changelanguage" name="Region">
+            <option value="">选择区域</option>
+            <option value="ap-beijing">华北地区(北京)</option>
+            <option value="ap-chengdu">西南地区(成都)</option>
+            <option value="ap-guangzhou">华南地区(广州)</option>
+            <option value="ap-guangzhou-open">华南地区(广州Open)</option>
+            <option value="ap-hongkong">港澳台地区(中国香港)</option>
+            <option value="ap-mumbai">亚太南部(孟买)</option>
+            <option value="ap-shanghai">华东地区(上海)</option>
+            <option value="ap-shanghai-fsi">华东地区(上海金融)</option>
+            <option value="ap-singapore">亚太东南(新加坡)</option>
+            <option value="ap-tokyo">亚太东北(东京)</option>
+            <option value="na-siliconvalley">美国西部(硅谷)</option>
+            <option value="na-toronto">北美地区(多伦多)</option>
+        </select>（腾讯几个月了还不做出来，只能先弄选择了）<br>
         <input type="submit" value="'.getconstStr('Submit').'">
     </form>
     <script>
@@ -182,11 +213,7 @@ language:<br>';
             location.href = location.href;
         }
         function notnull(t)
-        {
-            if (t.admin.value==\'\') {
-                alert(\'input admin\');
-                return false;
-            }';
+        {';
         if (getConfig('SecretId')==''||getConfig('SecretKey')=='') $html .= '
             if (t.SecretId.value==\'\') {
                 alert(\'input SecretId\');
